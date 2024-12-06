@@ -17,7 +17,7 @@ st.set_page_config(
     page_icon="static/favicon.ico",
 )
 
-if "password_correct" not in st.session_state:
+if "password_correct" in st.session_state:
 
     if "has_rerun" not in st.session_state:
         st.session_state.has_rerun = False
