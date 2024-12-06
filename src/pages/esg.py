@@ -15,7 +15,7 @@ supabase: Client = create_client(st.secrets.supabase.url, st.secrets.supabase.ke
 def get_total_count():
     try:
         # 使用 count='exact' 来获取总行数
-        count_response = supabase.table("esg_meta").select("*", count='exact').execute()
+        count_response = supabase.table("esg_meta_copy").select("id", count='exact').execute()
         return count_response.count
     except Exception as e:
         st.error(f"获取总行数时出错: {e}")
@@ -25,7 +25,7 @@ def get_total_count():
 def get_columns():
     try:
         # 仅获取一条记录来提取列名
-        response = supabase.table("esg_meta").select("*").limit(1).execute()
+        response = supabase.table("esg_meta_copy").select("*").limit(1).execute()
         if response.data:
             return list(response.data[0].keys())
         else:
@@ -37,7 +37,7 @@ def get_columns():
 @st.cache_data(show_spinner=False)
 def fetch_data(page_number: int, page_size: int, sort_field: str = None, sort_order: str = "asc"):
     try:
-        query = supabase.table("esg_meta").select("*")
+        query = supabase.table("esg_meta_copy").select("country, company_name, company_short_name, report_title, publication_date, language, category, report_url")
         
         if sort_field:
             query = query.order(sort_field, desc=(sort_order == "desc"))
@@ -55,7 +55,8 @@ def fetch_data(page_number: int, page_size: int, sort_field: str = None, sort_or
 total_count = get_total_count()
 
 # 获取列名
-columns = get_columns()
+# columns = get_columns()
+columns = ['country', 'company_name', 'company_short_name', 'report_title', 'publication_date', 'language', 'category', 'report_url']
 
 # 顶部菜单：排序选项
 top_menu = st.columns(3)
