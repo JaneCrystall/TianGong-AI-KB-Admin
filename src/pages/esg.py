@@ -7,14 +7,14 @@ import pytz
 import streamlit as st
 from supabase import Client, create_client
 
-from src.module.file import upload_file
+from module.file import upload_file
 
 # 配置 Streamlit 页面
 st.set_page_config(
     page_title="Journal Papers",
     layout="wide",
     initial_sidebar_state="expanded",
-    page_icon="static/favicon.ico",
+    page_icon="src/static/favicon.ico",
 )
 
 if "password_correct" in st.session_state:
