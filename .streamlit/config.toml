@@ -1,0 +1,13 @@
+[theme]
+primaryColor = "#5C246A"
+
+[browser]
+gatherUsageStats = false
+
+[server]
+enableStaticServing = true
+maxUploadSize = 50
+maxMessageSize = 200
+
+[client]
+showErrorDetails = true
