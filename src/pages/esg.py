@@ -17,7 +17,7 @@ st.set_page_config(
     page_icon="static/favicon.ico",
 )
 
-if "password_correct" in st.session_state:
+if "password_correct" not in st.session_state:
 
     if "has_rerun" not in st.session_state:
         st.session_state.has_rerun = False
@@ -231,34 +231,51 @@ if "password_correct" in st.session_state:
     with st.expander("Upload File for Selected Record"):
         # 构建选项列表
         record_options = dataset["id"].astype(str) + " - " + dataset["report_title"]
-        selected_record = st.selectbox("Select a record", options=record_options)
 
-        uploaded_file = st.file_uploader("Upload a file", type=["pdf", "docx", "txt"])
+        # Wrap upload logic in a separate form
+        with st.form("upload_form"):
+            selected_record = st.selectbox("Select a record", options=record_options)
+            uploaded_file = st.file_uploader("Upload a file", type=["pdf", "docx", "txt"])
 
-        if uploaded_file is not None and selected_record:
-            # 提取选中的记录 ID
-            selected_id = selected_record.split(" - ")[0]
+            upload_submitted = st.form_submit_button("Upload File")
 
-            # 定义文件路径
-            file_name = selected_id + ".pdf"
-            tmp_file_path = os.path.join(tempfile.gettempdir(), file_name)
+            if upload_submitted:
+                if uploaded_file and selected_record:
+                    # 提取选中的记录 ID
+                    selected_id = selected_record.split(" - ")[0]
 
-            with open(tmp_file_path, "wb") as tmp_file:
-                tmp_file.write(uploaded_file.getbuffer())
+                    # 定义文件路径
+                    file_extension = os.path.splitext(uploaded_file.name)[1]
+                    file_name = f"{selected_id}{file_extension}"
+                    tmp_file_path = os.path.join(tempfile.gettempdir(), file_name)
 
-            success = upload_file(
-                dest_path="/homes/nanli/test", file_path=tmp_file_path
-            )
-            if success:
-                # 更新数据库记录，添加文件 URL
-                update_record(
-                    selected_id, {"uploaded_time": datetime.now(timezone).isoformat()}
-                )
-                st.success("File uploaded and record updated successfully.")
+                    try:
+                        with open(tmp_file_path, "wb") as tmp_file:
+                            tmp_file.write(uploaded_file.getbuffer())
 
-                os.remove(tmp_file_path)
+                        success = upload_file(
+                            dest_path="/homes/nanli/test", file_path=tmp_file_path
+                        )
+                        if success:
+                            # 更新数据库记录，添加文件 URL
+                            update_record(
+                                selected_id, {"uploaded_time": datetime.now(timezone).isoformat()}
+                            )
+                            st.success("File uploaded and record updated successfully.")
+                        else:
+                            st.error("File upload failed.")
 
-                if not st.session_state.has_rerun:
-                    st.session_state.has_rerun = True
+                    except Exception as e:
+                        st.error(f"An error occurred during file upload: {e}")
+
+                    finally:
+                        if os.path.exists(tmp_file_path):
+                            os.remove(tmp_file_path)
+
+                    # 增加 data_version 以刷新缓存
                     st.session_state.data_version += 1
+
+                    # Rerun to refresh data_editor
                     st.rerun()
+                else:
+                    st.error("Please select a record and upload a valid file.")
