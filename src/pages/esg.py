@@ -1,6 +1,13 @@
-import streamlit as st
+import os
+import tempfile
+from datetime import datetime
+
 import pandas as pd
+import pytz
+import streamlit as st
 from supabase import Client, create_client
+
+from src.module.file import upload_file
 
 # 配置 Streamlit 页面
 st.set_page_config(
@@ -11,9 +18,13 @@ st.set_page_config(
 )
 
 if "password_correct" in st.session_state:
+
+    if "has_rerun" not in st.session_state:
+        st.session_state.has_rerun = False
+
+    timezone = pytz.timezone("Asia/Shanghai")
     # 初始化 Supabase 客户端
     supabase: Client = create_client(st.secrets.supabase.url, st.secrets.supabase.key)
-
 
     @st.cache_data(show_spinner=False, ttl=600)
     def get_total_count(data_version: int):
@@ -26,7 +37,6 @@ if "password_correct" in st.session_state:
             st.error(f"Error fetching total count: {e}")
             return 0
 
-
     @st.cache_data(show_spinner=False)
     def fetch_data(
         page_number: int,
@@ -38,7 +48,7 @@ if "password_correct" in st.session_state:
         try:
             query = supabase.table("esg_meta_copy").select(
                 "id, country, company_name, company_short_name, report_title, "
-                "publication_date, language, category, report_url, created_time, last_updated_time"
+                "publication_date, language, category, report_url, uploaded_time, created_time, last_updated_time"
             )
 
             if sort_field:
@@ -52,7 +62,6 @@ if "password_correct" in st.session_state:
             st.error(f"Error fetching data: {e}")
             return pd.DataFrame()
 
-
     def create_record(data):
         try:
             response = supabase.table("esg_meta_copy").insert(data).execute()
@@ -60,14 +69,14 @@ if "password_correct" in st.session_state:
         except Exception as e:
             st.error(f"Error creating record: {e}")
 
-
     def update_record(id, data):
         try:
-            response = supabase.table("esg_meta_copy").update(data).eq("id", id).execute()
+            response = (
+                supabase.table("esg_meta_copy").update(data).eq("id", id).execute()
+            )
             st.success(f"Record with ID {id} updated successfully")
         except Exception as e:
             st.error(f"Error updating record: {e}")
-
 
     def delete_record(id):
         try:
@@ -75,7 +84,6 @@ if "password_correct" in st.session_state:
             st.success(f"Record with ID {id} deleted successfully")
         except Exception as e:
             st.error(f"Error deleting record: {e}")
-
 
     # 初始化 data_version
     if "data_version" not in st.session_state:
@@ -95,6 +103,7 @@ if "password_correct" in st.session_state:
         "language",
         "category",
         "report_url",
+        "uploaded_time",
         "created_time",
         "last_updated_time",
     ]
@@ -197,7 +206,9 @@ if "password_correct" in st.session_state:
                 # 标识更新的记录：在原始和编辑后都存在，但内容不同
                 common_ids = original_ids & edited_ids
                 for cid in common_ids:
-                    original_row = original_df[original_df["id"].astype(str) == cid].iloc[0]
+                    original_row = original_df[
+                        original_df["id"].astype(str) == cid
+                    ].iloc[0]
                     edited_row = edited_df[edited_df["id"].astype(str) == cid].iloc[0]
                     # 比较除 'id' 外的内容是否有变化
                     if not original_row.drop("id").equals(edited_row.drop("id")):
@@ -216,3 +227,38 @@ if "password_correct" in st.session_state:
                     data_version=st.session_state.data_version,
                 )
                 st.success("All changes have been saved successfully.")
+
+    with st.expander("Upload File for Selected Record"):
+        # 构建选项列表
+        record_options = dataset["id"].astype(str) + " - " + dataset["report_title"]
+        selected_record = st.selectbox("Select a record", options=record_options)
+
+        uploaded_file = st.file_uploader("Upload a file", type=["pdf", "docx", "txt"])
+
+        if uploaded_file is not None and selected_record:
+            # 提取选中的记录 ID
+            selected_id = selected_record.split(" - ")[0]
+
+            # 定义文件路径
+            file_name = selected_id + ".pdf"
+            tmp_file_path = os.path.join(tempfile.gettempdir(), file_name)
+
+            with open(tmp_file_path, "wb") as tmp_file:
+                tmp_file.write(uploaded_file.getbuffer())
+
+            success = upload_file(
+                dest_path="/homes/nanli/test", file_path=tmp_file_path
+            )
+            if success:
+                # 更新数据库记录，添加文件 URL
+                update_record(
+                    selected_id, {"uploaded_time": datetime.now(timezone).isoformat()}
+                )
+                st.success("File uploaded and record updated successfully.")
+
+                os.remove(tmp_file_path)
+
+                if not st.session_state.has_rerun:
+                    st.session_state.has_rerun = True
+                    st.session_state.data_version += 1
+                    st.rerun()
