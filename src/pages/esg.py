@@ -11,13 +11,13 @@ from module.file import upload_file
 
 # 配置 Streamlit 页面
 st.set_page_config(
-    page_title="Journal Papers",
+    page_title="ESG",
     layout="wide",
     initial_sidebar_state="expanded",
     page_icon="src/static/favicon.ico",
 )
 
-if "password_correct" in st.session_state:
+if "password_correct" not in st.session_state:
 
     if "has_rerun" not in st.session_state:
         st.session_state.has_rerun = False
@@ -46,9 +46,13 @@ if "password_correct" in st.session_state:
         data_version: int = 0,
     ):
         try:
-            query = supabase.table("esg_meta_copy").select(
-                "id, country, company_name, company_short_name, report_title, "
-                "publication_date, language, category, report_url, uploaded_time, created_time, last_updated_time"
+            query = (
+                supabase.table("esg_meta_copy")
+                .select(
+                    "id, country, company_name, company_short_name, report_title, "
+                    "publication_date, language, category, report_url, uploaded_time, created_time, last_updated_time"
+                )
+                .order("created_time", desc=True)
             )
 
             if sort_field:
@@ -57,6 +61,18 @@ if "password_correct" in st.session_state:
             start = (page_number - 1) * page_size
             response = query.limit(page_size).offset(start).execute()
             dataset = pd.DataFrame(response.data)
+            dataset["publication_date"] = pd.to_datetime(
+                dataset["publication_date"], utc=True
+            )
+            dataset["last_updated_time"] = pd.to_datetime(
+                dataset["last_updated_time"]
+            ).dt.tz_convert("Asia/Shanghai")
+            dataset["uploaded_time"] = pd.to_datetime(
+                dataset["uploaded_time"]
+            ).dt.tz_convert("Asia/Shanghai")
+            dataset["created_time"] = pd.to_datetime(
+                dataset["created_time"]
+            ).dt.tz_convert("Asia/Shanghai")
             return dataset
         except Exception as e:
             st.error(f"Error fetching data: {e}")
@@ -66,6 +82,7 @@ if "password_correct" in st.session_state:
         try:
             response = supabase.table("esg_meta_copy").insert(data).execute()
             st.success("Record created successfully")
+            st.session_state.data_version += 1
         except Exception as e:
             st.error(f"Error creating record: {e}")
 
@@ -75,15 +92,41 @@ if "password_correct" in st.session_state:
                 supabase.table("esg_meta_copy").update(data).eq("id", id).execute()
             )
             st.success(f"Record with ID {id} updated successfully")
+            st.session_state.data_version += 1
         except Exception as e:
             st.error(f"Error updating record: {e}")
 
     def delete_record(id):
         try:
             response = supabase.table("esg_meta_copy").delete().eq("id", id).execute()
+            st.session_state.data_version += 1
             st.success(f"Record with ID {id} deleted successfully")
         except Exception as e:
             st.error(f"Error deleting record: {e}")
+
+    # @st.cache_data(show_spinner=False)
+    # def fetch_country_list(
+    #     page_number: int,
+    #     page_size: int,
+    #     sort_field: str = None,
+    #     sort_order: str = "asc",
+    #     data_version: int = 0,
+    # ):
+    #     try:
+    #         query = supabase.table("esg_country").select(
+    #             "code"
+    #         )
+
+    #         if sort_field:
+    #             query = query.order(sort_field, desc=(sort_order == "desc"))
+
+    #         start = (page_number - 1) * page_size
+    #         response = query.limit(page_size).offset(start).execute()
+    #         dataset = pd.DataFrame(response.data)
+    #         return dataset
+    #     except Exception as e:
+    #         st.error(f"Error fetching data: {e}")
+    #         return pd.DataFrame()
 
     # 初始化 data_version
     if "data_version" not in st.session_state:
@@ -165,8 +208,46 @@ if "password_correct" in st.session_state:
             disabled=["id"],  # 使 'id' 列只读
             use_container_width=True,
             num_rows="dynamic",
-            height=1000,
+            height=600,
             key="data_editor",
+            column_config={
+                "id": st.column_config.TextColumn(disabled=True),
+                "country": st.column_config.SelectboxColumn(
+                    "Country",
+                    options=[
+                        "CHN",
+                        "HKG",
+                        "JPN",
+                    ],
+                    required=True,
+                ),
+                "company_name": st.column_config.TextColumn(required=True),
+                "report_title": st.column_config.TextColumn(required=True),
+                "language": st.column_config.SelectboxColumn(
+                    width="medium",
+                    options=[
+                        "eng",
+                        "chi_sim",
+                        "chi_tra",
+                        "fra",
+                        "spa",
+                        "jpn",
+                        "kor",
+                    ],
+                    required=True,
+                ),
+                "report_url": st.column_config.LinkColumn(display_text="Open report"),
+                "publication_date": st.column_config.DateColumn(required=True),
+                "last_updated_time": st.column_config.DatetimeColumn(
+                    format="YYYY-MM-DD HH:mm:ss", disabled=True
+                ),
+                "uploaded_time": st.column_config.DatetimeColumn(
+                    format="YYYY-MM-DD HH:mm:ss", disabled=True
+                ),
+                "created_time": st.column_config.DatetimeColumn(
+                    format="YYYY-MM-DD HH:mm:ss", disabled=True
+                ),
+            },
         )
 
         # "Save Changes" 按钮
@@ -192,6 +273,7 @@ if "password_correct" in st.session_state:
                     )
                     for del_id in deleted_ids:
                         delete_record(del_id)
+                    st.rerun()
 
                 # 标识新增的记录：'id' 为 NaN
                 new_records = edited_df[edited_df["id"].isna()]
@@ -200,8 +282,19 @@ if "password_correct" in st.session_state:
                         f"Detected {len(new_records)} new records. Proceeding to create them."
                     )
                     for _, row in new_records.iterrows():
-                        new_data = row.drop("id").to_dict()  # 排除 'id' 以实现自增
+                        new_data = row.drop(
+                            ["id", "last_updated_time", "uploaded_time", "created_time"]
+                        ).to_dict()  # 排除 'id' 以实现自增
+
+                        if "publication_date" in new_data and isinstance(
+                            new_data["publication_date"], pd.Timestamp
+                        ):
+                            new_data["publication_date"] = new_data[
+                                "publication_date"
+                            ].strftime("%Y-%m-%d %H:%M:%S%z")
+
                         create_record(new_data)
+                        st.rerun()
 
                 # 标识更新的记录：在原始和编辑后都存在，但内容不同
                 common_ids = original_ids & edited_ids
@@ -211,9 +304,24 @@ if "password_correct" in st.session_state:
                     ].iloc[0]
                     edited_row = edited_df[edited_df["id"].astype(str) == cid].iloc[0]
                     # 比较除 'id' 外的内容是否有变化
-                    if not original_row.drop("id").equals(edited_row.drop("id")):
-                        update_data = edited_row.drop("id").to_dict()
+                    if not original_row.drop(
+                        ["id", "last_updated_time", "uploaded_time", "created_time"]
+                    ).equals(
+                        edited_row.drop(
+                            ["id", "last_updated_time", "uploaded_time", "created_time"]
+                        )
+                    ):
+                        update_data = edited_row.drop(
+                            ["id", "last_updated_time", "uploaded_time", "created_time"]
+                        ).to_dict()
+                        if "publication_date" in update_data and isinstance(
+                            update_data["publication_date"], pd.Timestamp
+                        ):
+                            update_data["publication_date"] = update_data[
+                                "publication_date"
+                            ].strftime("%Y-%m-%d %H:%M:%S%z")
                         update_record(cid, update_data)
+                        st.rerun()
 
                 # 增加 data_version 以刷新缓存
                 st.session_state.data_version += 1
@@ -235,7 +343,9 @@ if "password_correct" in st.session_state:
         # Wrap upload logic in a separate form
         with st.form("upload_form"):
             selected_record = st.selectbox("Select a record", options=record_options)
-            uploaded_file = st.file_uploader("Upload a file", type=["pdf", "docx", "txt"])
+            uploaded_file = st.file_uploader(
+                "Upload a file", type=["pdf", "docx", "txt"]
+            )
 
             upload_submitted = st.form_submit_button("Upload File")
 
@@ -259,7 +369,8 @@ if "password_correct" in st.session_state:
                         if success:
                             # 更新数据库记录，添加文件 URL
                             update_record(
-                                selected_id, {"uploaded_time": datetime.now(timezone).isoformat()}
+                                selected_id,
+                                {"uploaded_time": datetime.now(timezone).isoformat()},
                             )
                             st.success("File uploaded and record updated successfully.")
                         else:
