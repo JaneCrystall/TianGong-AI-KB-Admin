@@ -30,7 +30,7 @@ if "password_correct" not in st.session_state:
     def get_total_count(data_version: int):
         try:
             count_response = (
-                supabase.table("esg_meta").select("id", count="exact").execute()
+                supabase.table("standards").select("id", count="exact").execute()
             )
             return count_response.count
         except Exception as e:
@@ -46,30 +46,31 @@ if "password_correct" not in st.session_state:
         data_version: int = 0,
     ):
         try:
-            query = supabase.table("esg_meta").select(
-                "id, country, company_name, company_short_name, report_title, "
-                "publication_date, language, category_new, report_url, uploaded_time, created_time, last_updated_time"
+            query = supabase.table("standards").select(
+                "id, title, issuing_organization, effective_date, expiration_date, "
+                "standard_number, url, uploaded_time, last_updated_time"
             )
 
             if sort_field:
                 query = query.order(sort_field, desc=(sort_order == "desc"))
             else:
-                query = query.order("created_time", desc=True)
+                query = query.order("last_updated_time", desc=True)
 
             start = (page_number - 1) * page_size
             response = query.limit(page_size).offset(start).execute()
             dataset = pd.DataFrame(response.data)
-            dataset["publication_date"] = pd.to_datetime(
-                dataset["publication_date"], utc=True
+            dataset["issuing_organization"] = dataset["issuing_organization"].astype(str)
+            dataset["effective_date"] = pd.to_datetime(
+                dataset["effective_date"], utc=True
+            )
+            dataset["expiration_date"] = pd.to_datetime(
+                dataset["expiration_date"], utc=True
             )
             dataset["last_updated_time"] = pd.to_datetime(
                 dataset["last_updated_time"]
             ).dt.tz_convert("Asia/Shanghai")
             dataset["uploaded_time"] = pd.to_datetime(
                 dataset["uploaded_time"]
-            ).dt.tz_convert("Asia/Shanghai")
-            dataset["created_time"] = pd.to_datetime(
-                dataset["created_time"]
             ).dt.tz_convert("Asia/Shanghai")
             return dataset
         except Exception as e:
@@ -78,7 +79,7 @@ if "password_correct" not in st.session_state:
 
     def create_record(data):
         try:
-            response = supabase.table("esg_meta").insert(data).execute()
+            response = supabase.table("standards").insert(data).execute()
             st.success("Record created successfully")
             st.session_state.data_version += 1
         except Exception as e:
@@ -87,7 +88,7 @@ if "password_correct" not in st.session_state:
     def update_record(id, data):
         try:
             response = (
-                supabase.table("esg_meta").update(data).eq("id", id).execute()
+                supabase.table("standards").update(data).eq("id", id).execute()
             )
             st.success(f"Record with ID {id} updated successfully")
             st.session_state.data_version += 1
@@ -96,7 +97,7 @@ if "password_correct" not in st.session_state:
 
     def delete_record(id):
         try:
-            response = supabase.table("esg_meta").delete().eq("id", id).execute()
+            response = supabase.table("standards").delete().eq("id", id).execute()
             st.session_state.data_version += 1
             st.success(f"Record with ID {id} deleted successfully")
         except Exception as e:
@@ -112,16 +113,13 @@ if "password_correct" not in st.session_state:
     # 定义列
     columns = [
         "id",
-        "country",
-        "company_name",
-        "company_short_name",
-        "report_title",
-        "publication_date",
-        "language",
-        "category",
-        "report_url",
+        "title",
+        "issuing_organization",
+        "effective_date",
+        "expiration_date",
+        "standard_number",
+        "url",
         "uploaded_time",
-        "created_time",
         "last_updated_time",
     ]
 
@@ -201,17 +199,7 @@ if "password_correct" not in st.session_state:
             key="data_editor",
             column_config={
                 "id": st.column_config.TextColumn(disabled=True),
-                "country": st.column_config.SelectboxColumn(
-                    "Country",
-                    options=[
-                        "CHN",
-                        "HKG",
-                        "JPN",
-                    ],
-                    required=True,
-                ),
-                "company_name": st.column_config.TextColumn(required=True),
-                "report_title": st.column_config.TextColumn(required=True),
+                "title": st.column_config.TextColumn(required=True),
                 "language": st.column_config.SelectboxColumn(
                     width="medium",
                     options=[
@@ -225,15 +213,14 @@ if "password_correct" not in st.session_state:
                     ],
                     required=True,
                 ),
-                "report_url": st.column_config.LinkColumn(display_text="Open report"),
-                "publication_date": st.column_config.DateColumn(required=True),
+                "issuing_organization": st.column_config.TextColumn(),
+                "url": st.column_config.LinkColumn(display_text="Open report"),
+                "effective_date": st.column_config.DateColumn(required=True),
+                "expiration_date": st.column_config.DateColumn(),
                 "last_updated_time": st.column_config.DatetimeColumn(
                     format="YYYY-MM-DD HH:mm:ss", disabled=True
                 ),
                 "uploaded_time": st.column_config.DatetimeColumn(
-                    format="YYYY-MM-DD HH:mm:ss", disabled=True
-                ),
-                "created_time": st.column_config.DatetimeColumn(
                     format="YYYY-MM-DD HH:mm:ss", disabled=True
                 ),
             },
@@ -272,16 +259,23 @@ if "password_correct" not in st.session_state:
                     )
                     for _, row in new_records.iterrows():
                         new_data = row.drop(
-                            ["id", "last_updated_time", "uploaded_time", "created_time"]
+                            ["id", "last_updated_time", "uploaded_time"]
                         ).to_dict()  # 排除 'id' 以实现自增
 
-                        if "publication_date" in new_data and isinstance(
-                            new_data["publication_date"], pd.Timestamp
+                        if "effective_date" in new_data and isinstance(
+                            new_data["effective_date"], pd.Timestamp
                         ):
-                            new_data["publication_date"] = new_data[
-                                "publication_date"
+                            new_data["effective_date"] = new_data[
+                                "effective_date"
                             ].strftime("%Y-%m-%d %H:%M:%S%z")
-
+                        
+                        if "expiration_date" in new_data and isinstance(
+                            new_data["expiration_date"], pd.Timestamp
+                        ):
+                            new_data["expiration_date"] = new_data[
+                                "expiration_date"
+                            ].strftime("%Y-%m-%d %H:%M:%S%z")
+                        
                         create_record(new_data)
                         st.rerun()
 
@@ -294,20 +288,27 @@ if "password_correct" not in st.session_state:
                     edited_row = edited_df[edited_df["id"].astype(str) == cid].iloc[0]
                     # 比较除 'id' 外的内容是否有变化
                     if not original_row.drop(
-                        ["id", "last_updated_time", "uploaded_time", "created_time"]
+                        ["id", "last_updated_time", "uploaded_time"]
                     ).equals(
                         edited_row.drop(
-                            ["id", "last_updated_time", "uploaded_time", "created_time"]
+                            ["id", "last_updated_time", "uploaded_time"]
                         )
                     ):
                         update_data = edited_row.drop(
-                            ["id", "last_updated_time", "uploaded_time", "created_time"]
+                            ["id", "last_updated_time", "uploaded_time"]
                         ).to_dict()
-                        if "publication_date" in update_data and isinstance(
-                            update_data["publication_date"], pd.Timestamp
+                        if "effective_date" in new_data and isinstance(
+                            new_data["effective_date"], pd.Timestamp
                         ):
-                            update_data["publication_date"] = update_data[
-                                "publication_date"
+                            new_data["effective_date"] = new_data[
+                                "effective_date"
+                            ].strftime("%Y-%m-%d %H:%M:%S%z")
+                        
+                        if "expiration_date" in new_data and isinstance(
+                            new_data["expiration_date"], pd.Timestamp
+                        ):
+                            new_data["expiration_date"] = new_data[
+                                "expiration_date"
                             ].strftime("%Y-%m-%d %H:%M:%S%z")
                         update_record(cid, update_data)
                         st.rerun()
@@ -327,7 +328,7 @@ if "password_correct" not in st.session_state:
 
     with st.expander("Upload File for Selected Record"):
         # 构建选项列表
-        record_options = dataset["id"].astype(str) + " - " + dataset["report_title"]
+        record_options = dataset["id"].astype(str) + " - " + dataset["title"]
 
         # Wrap upload logic in a separate form
         with st.form("upload_form"):
