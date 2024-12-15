@@ -11,7 +11,7 @@
             "module": "streamlit",
             "cwd": "${workspaceFolder}",
             // "justMyCode": false,
-            "args": ["run", "src/app.py"]
+            "args": ["run", "src/Start.py"]
         }
     ]
 }

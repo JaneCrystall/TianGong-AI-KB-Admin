@@ -11,7 +11,7 @@ from supabase import Client, create_client
 
 # 配置 Streamlit 页面
 st.set_page_config(
-    page_title="ESG",
+    page_title="Reports",
     layout="wide",
     initial_sidebar_state="expanded",
     page_icon="src/static/favicon.ico",
@@ -30,7 +30,7 @@ if "password_correct" not in st.session_state:
     def get_total_count(data_version: int):
         try:
             count_response = (
-                supabase.table("esg_meta").select("id", count="exact").execute()
+                supabase.table("reports").select("id", count="exact").execute()
             )
             return count_response.count
         except Exception as e:
@@ -46,40 +46,35 @@ if "password_correct" not in st.session_state:
         data_version: int = 0,
     ):
         try:
-            query = supabase.table("esg_meta").select(
-                "id, country, company_name, report_title, "
-                "publication_date, language, report_url, uploaded_time, created_time, last_updated_time"
+            query = supabase.table("reports").select(
+                "id, title, issuing_organization, release_date, language, url, uploaded_time"
             )
 
             if sort_field:
                 query = query.order(sort_field, desc=(sort_order == "desc"))
             else:
-                query = query.order("created_time", desc=True)
+                query = query.order("uploaded_time", desc=True)
 
             start = (page_number - 1) * page_size
             response = query.limit(page_size).offset(start).execute()
             dataset = pd.DataFrame(response.data)
-            dataset["publication_date"] = pd.to_datetime(
-                dataset["publication_date"], utc=True
+            dataset["issuing_organization"] = dataset["issuing_organization"].astype(str)
+            dataset["release_date"] = pd.to_datetime(
+                dataset["release_date"], utc=True
             )
-            dataset["last_updated_time"] = pd.to_datetime(
-                dataset["last_updated_time"]
-            ).dt.tz_convert("Asia/Shanghai")
             dataset["uploaded_time"] = pd.to_datetime(
                 dataset["uploaded_time"]
-            ).dt.tz_convert("Asia/Shanghai")
-            dataset["created_time"] = pd.to_datetime(
-                dataset["created_time"]
             ).dt.tz_convert("Asia/Shanghai")
             return dataset
         except Exception as e:
             st.error(f"Error fetching data: {e}")
             return pd.DataFrame()
 
+
     def update_record(id, data):
         try:
             response = (
-                supabase.table("esg_meta").update(data).eq("id", id).execute()
+                supabase.table("reports").update(data).eq("id", id).execute()
             )
             st.success(f"Record with ID {id} updated successfully")
             st.session_state.data_version += 1
@@ -96,15 +91,12 @@ if "password_correct" not in st.session_state:
     # 定义列
     columns = [
         "id",
-        "country",
-        "company_name",
-        "report_title",
-        "publication_date",
+        "title",
+        "issuing_organization",
+        "release_date",
         "language",
-        "report_url",
+        "url",
         "uploaded_time",
-        "created_time",
-        "last_updated_time",
     ]
 
     with st.sidebar:
@@ -159,35 +151,32 @@ if "password_correct" not in st.session_state:
         data_version=st.session_state.data_version,
     )
 
-    # 使用表单封装数据编辑器和保存按钮，防止重复执行
-    # with st.form("data_form", clear_on_submit=False):
-        # 显示数据编辑器
+
+    # 显示数据编辑器
     edited_data = st.data_editor(
         data=dataset,
         disabled=["id"],  # 使 'id' 列只读
         use_container_width=True,
-        # num_rows="dynamic",
-        height=600,
+        num_rows="dynamic",
+        height=400,
         key="data_editor",
         column_config={
-            "id": st.column_config.TextColumn(disabled=True),
-            "report_url": st.column_config.LinkColumn(display_text="Open file"),
-            "publication_date": st.column_config.DateColumn(required=True),
+            "url": st.column_config.LinkColumn(display_text="Open file"),
+            "effective_date": st.column_config.DateColumn(),
+            "expiration_date": st.column_config.DateColumn(),
             "last_updated_time": st.column_config.DatetimeColumn(
                 format="YYYY-MM-DD HH:mm:ss", disabled=True
             ),
             "uploaded_time": st.column_config.DatetimeColumn(
                 format="YYYY-MM-DD HH:mm:ss", disabled=True
             ),
-            "created_time": st.column_config.DatetimeColumn(
-                format="YYYY-MM-DD HH:mm:ss", disabled=True
-            ),
         },
     )
 
+
     with st.expander("Upload File for Selected Record"):
         # 构建选项列表
-        record_options = dataset["id"].astype(str) + " - " + dataset["report_title"]
+        record_options = dataset["id"].astype(str) + " - " + dataset["title"]
 
         # Wrap upload logic in a separate form
         with st.form("upload_form"):
