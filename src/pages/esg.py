@@ -47,8 +47,8 @@ if "password_correct" not in st.session_state:
     ):
         try:
             query = supabase.table("esg_meta").select(
-                "id, country, company_name, company_short_name, report_title, "
-                "publication_date, language, category_new, report_url, uploaded_time, created_time, last_updated_time"
+                "id, country, company_name, report_title, "
+                "publication_date, language, report_url, uploaded_time, created_time, last_updated_time"
             )
 
             if sort_field:
@@ -76,14 +76,6 @@ if "password_correct" not in st.session_state:
             st.error(f"Error fetching data: {e}")
             return pd.DataFrame()
 
-    def create_record(data):
-        try:
-            response = supabase.table("esg_meta").insert(data).execute()
-            st.success("Record created successfully")
-            st.session_state.data_version += 1
-        except Exception as e:
-            st.error(f"Error creating record: {e}")
-
     def update_record(id, data):
         try:
             response = (
@@ -93,14 +85,6 @@ if "password_correct" not in st.session_state:
             st.session_state.data_version += 1
         except Exception as e:
             st.error(f"Error updating record: {e}")
-
-    def delete_record(id):
-        try:
-            response = supabase.table("esg_meta").delete().eq("id", id).execute()
-            st.session_state.data_version += 1
-            st.success(f"Record with ID {id} deleted successfully")
-        except Exception as e:
-            st.error(f"Error deleting record: {e}")
 
     # 初始化 data_version
     if "data_version" not in st.session_state:
@@ -114,11 +98,9 @@ if "password_correct" not in st.session_state:
         "id",
         "country",
         "company_name",
-        "company_short_name",
         "report_title",
         "publication_date",
         "language",
-        "category",
         "report_url",
         "uploaded_time",
         "created_time",
@@ -177,153 +159,31 @@ if "password_correct" not in st.session_state:
         data_version=st.session_state.data_version,
     )
 
-    # 使用 Session State 保存原始数据
-    if "original_data" not in st.session_state:
-        st.session_state.original_data = dataset.copy()
-    else:
-        # 更新 session state 如果页面或数据发生变化
-        if (
-            st.session_state.original_data.empty
-            or st.session_state.original_data.shape != dataset.shape
-            or not st.session_state.original_data.equals(dataset)
-        ):
-            st.session_state.original_data = dataset.copy()
-
     # 使用表单封装数据编辑器和保存按钮，防止重复执行
-    with st.form("data_form", clear_on_submit=False):
+    # with st.form("data_form", clear_on_submit=False):
         # 显示数据编辑器
-        edited_data = st.data_editor(
-            data=dataset,
-            disabled=["id"],  # 使 'id' 列只读
-            use_container_width=True,
-            num_rows="dynamic",
-            height=600,
-            key="data_editor",
-            column_config={
-                "id": st.column_config.TextColumn(disabled=True),
-                "country": st.column_config.SelectboxColumn(
-                    "Country",
-                    options=[
-                        "CHN",
-                        "HKG",
-                        "JPN",
-                    ],
-                    required=True,
-                ),
-                "company_name": st.column_config.TextColumn(required=True),
-                "report_title": st.column_config.TextColumn(required=True),
-                "language": st.column_config.SelectboxColumn(
-                    width="medium",
-                    options=[
-                        "eng",
-                        "chi_sim",
-                        "chi_tra",
-                        "fra",
-                        "spa",
-                        "jpn",
-                        "kor",
-                    ],
-                    required=True,
-                ),
-                "report_url": st.column_config.LinkColumn(display_text="Open report"),
-                "publication_date": st.column_config.DateColumn(required=True),
-                "last_updated_time": st.column_config.DatetimeColumn(
-                    format="YYYY-MM-DD HH:mm:ss", disabled=True
-                ),
-                "uploaded_time": st.column_config.DatetimeColumn(
-                    format="YYYY-MM-DD HH:mm:ss", disabled=True
-                ),
-                "created_time": st.column_config.DatetimeColumn(
-                    format="YYYY-MM-DD HH:mm:ss", disabled=True
-                ),
-            },
-        )
-
-        # "Save Changes" 按钮
-        submitted = st.form_submit_button("Save Changes")
-
-        if submitted:
-            original_df = st.session_state.original_data
-            edited_df = edited_data
-
-            # 确保 'id' 列存在
-            if "id" not in edited_df.columns:
-                st.error("'id' column is missing. Unable to perform CRUD operations.")
-            else:
-                # 将 'id' 转换为字符串以避免类型不匹配
-                original_ids = set(original_df["id"].astype(str))
-                edited_ids = set(edited_df["id"].astype(str).dropna())
-
-                # 标识删除的记录：在原始中存在但在编辑后不存在
-                deleted_ids = original_ids - edited_ids
-                if deleted_ids:
-                    st.warning(
-                        f"Detected {len(deleted_ids)} deletions. Proceeding to delete them."
-                    )
-                    for del_id in deleted_ids:
-                        delete_record(del_id)
-                    st.rerun()
-
-                # 标识新增的记录：'id' 为 NaN
-                new_records = edited_df[edited_df["id"].isna()]
-                if not new_records.empty:
-                    st.info(
-                        f"Detected {len(new_records)} new records. Proceeding to create them."
-                    )
-                    for _, row in new_records.iterrows():
-                        new_data = row.drop(
-                            ["id", "last_updated_time", "uploaded_time", "created_time"]
-                        ).to_dict()  # 排除 'id' 以实现自增
-
-                        if "publication_date" in new_data and isinstance(
-                            new_data["publication_date"], pd.Timestamp
-                        ):
-                            new_data["publication_date"] = new_data[
-                                "publication_date"
-                            ].strftime("%Y-%m-%d %H:%M:%S%z")
-
-                        create_record(new_data)
-                        st.rerun()
-
-                # 标识更新的记录：在原始和编辑后都存在，但内容不同
-                common_ids = original_ids & edited_ids
-                for cid in common_ids:
-                    original_row = original_df[
-                        original_df["id"].astype(str) == cid
-                    ].iloc[0]
-                    edited_row = edited_df[edited_df["id"].astype(str) == cid].iloc[0]
-                    # 比较除 'id' 外的内容是否有变化
-                    if not original_row.drop(
-                        ["id", "last_updated_time", "uploaded_time", "created_time"]
-                    ).equals(
-                        edited_row.drop(
-                            ["id", "last_updated_time", "uploaded_time", "created_time"]
-                        )
-                    ):
-                        update_data = edited_row.drop(
-                            ["id", "last_updated_time", "uploaded_time", "created_time"]
-                        ).to_dict()
-                        if "publication_date" in update_data and isinstance(
-                            update_data["publication_date"], pd.Timestamp
-                        ):
-                            update_data["publication_date"] = update_data[
-                                "publication_date"
-                            ].strftime("%Y-%m-%d %H:%M:%S%z")
-                        update_record(cid, update_data)
-                        st.rerun()
-
-                # 增加 data_version 以刷新缓存
-                st.session_state.data_version += 1
-
-                # 刷新原始数据以反映更改
-                st.session_state.original_data = fetch_data(
-                    page_number=current_page,
-                    page_size=batch_size,
-                    sort_field=sort_field,
-                    sort_order=sort_order,
-                    data_version=st.session_state.data_version,
-                )
-                st.success("All changes have been saved successfully.")
+    edited_data = st.data_editor(
+        data=dataset,
+        disabled=["id"],  # 使 'id' 列只读
+        use_container_width=True,
+        # num_rows="dynamic",
+        height=600,
+        key="data_editor",
+        column_config={
+            "id": st.column_config.TextColumn(disabled=True),
+            "report_url": st.column_config.LinkColumn(display_text="Open file"),
+            "publication_date": st.column_config.DateColumn(required=True),
+            "last_updated_time": st.column_config.DatetimeColumn(
+                format="YYYY-MM-DD HH:mm:ss", disabled=True
+            ),
+            "uploaded_time": st.column_config.DatetimeColumn(
+                format="YYYY-MM-DD HH:mm:ss", disabled=True
+            ),
+            "created_time": st.column_config.DatetimeColumn(
+                format="YYYY-MM-DD HH:mm:ss", disabled=True
+            ),
+        },
+    )
 
     with st.expander("Upload File for Selected Record"):
         # 构建选项列表
@@ -346,7 +206,7 @@ if "password_correct" not in st.session_state:
                     # 定义文件路径
                     file_extension = os.path.splitext(uploaded_file.name)[1]
                     file_name = f"{selected_id}{file_extension}"
-                    base_path = "/Users/jing/Projects/TianGong-AI-KB-Admin/test/"
+                    base_path = "test/"
 
                     try:
                         with open(base_path + file_name, "wb") as file:

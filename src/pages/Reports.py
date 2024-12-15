@@ -11,7 +11,7 @@ from supabase import Client, create_client
 
 # 配置 Streamlit 页面
 st.set_page_config(
-    page_title="Standards",
+    page_title="Reports",
     layout="wide",
     initial_sidebar_state="expanded",
     page_icon="src/static/favicon.ico",
@@ -30,7 +30,7 @@ if "password_correct" not in st.session_state:
     def get_total_count(data_version: int):
         try:
             count_response = (
-                supabase.table("standards").select("id", count="exact").execute()
+                supabase.table("reports").select("id", count="exact").execute()
             )
             return count_response.count
         except Exception as e:
@@ -46,29 +46,22 @@ if "password_correct" not in st.session_state:
         data_version: int = 0,
     ):
         try:
-            query = supabase.table("standards").select(
-                "id, title, issuing_organization, effective_date, expiration_date, "
-                "standard_number, url, uploaded_time, last_updated_time"
+            query = supabase.table("reports").select(
+                "id, title, issuing_organization, release_date, language, url, uploaded_time"
             )
 
             if sort_field:
                 query = query.order(sort_field, desc=(sort_order == "desc"))
             else:
-                query = query.order("last_updated_time", desc=True)
+                query = query.order("uploaded_time", desc=True)
 
             start = (page_number - 1) * page_size
             response = query.limit(page_size).offset(start).execute()
             dataset = pd.DataFrame(response.data)
             dataset["issuing_organization"] = dataset["issuing_organization"].astype(str)
-            dataset["effective_date"] = pd.to_datetime(
-                dataset["effective_date"], utc=True
+            dataset["release_date"] = pd.to_datetime(
+                dataset["release_date"], utc=True
             )
-            dataset["expiration_date"] = pd.to_datetime(
-                dataset["expiration_date"], utc=True
-            )
-            dataset["last_updated_time"] = pd.to_datetime(
-                dataset["last_updated_time"]
-            ).dt.tz_convert("Asia/Shanghai")
             dataset["uploaded_time"] = pd.to_datetime(
                 dataset["uploaded_time"]
             ).dt.tz_convert("Asia/Shanghai")
@@ -81,7 +74,7 @@ if "password_correct" not in st.session_state:
     def update_record(id, data):
         try:
             response = (
-                supabase.table("standards").update(data).eq("id", id).execute()
+                supabase.table("reports").update(data).eq("id", id).execute()
             )
             st.success(f"Record with ID {id} updated successfully")
             st.session_state.data_version += 1
@@ -100,12 +93,10 @@ if "password_correct" not in st.session_state:
         "id",
         "title",
         "issuing_organization",
-        "effective_date",
-        "expiration_date",
-        "standard_number",
+        "release_date",
+        "language",
         "url",
         "uploaded_time",
-        "last_updated_time",
     ]
 
     with st.sidebar:
@@ -167,7 +158,7 @@ if "password_correct" not in st.session_state:
         disabled=["id"],  # 使 'id' 列只读
         use_container_width=True,
         num_rows="dynamic",
-        height=600,
+        height=400,
         key="data_editor",
         column_config={
             "url": st.column_config.LinkColumn(display_text="Open file"),
