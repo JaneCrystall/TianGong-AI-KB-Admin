@@ -33,7 +33,8 @@ sudo apt install python3.12-dev
 ## Start
 
 ```bash
-streamlit run src/app.py
+streamlit run src/Start.py
+nohup streamlit run src/Start.py > log.txt 2>&1 &
 ```
 
 ### Auto Build
